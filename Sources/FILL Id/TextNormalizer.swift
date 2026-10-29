@@ -33,9 +33,12 @@ enum TextNormalizer {
             }
         }
 
+        // ⚠️ 置換は必ず `.literal`（コードポイント単位の比較）で行う。既定の比較は**正規等価**なので、
+        //    互換漢字 U+F9DC（隆）を退避すると、同じ字の統合漢字 U+9686 まで一緒に置き換わり、
+        //    復元時にどちらも互換漢字になってしまう（2026-10-29 CLI 実測で修正）。
         var work = input
         for (ch, ph) in zip(protectedChars, placeholders) {
-            work = work.replacingOccurrences(of: ch, with: ph)
+            work = work.replacingOccurrences(of: ch, with: ph, options: .literal)
         }
 
         // 2. NFC を適用
@@ -43,7 +46,7 @@ enum TextNormalizer {
 
         // 3. 退避した文字を逆順で復元
         for (ch, ph) in zip(protectedChars, placeholders).reversed() {
-            work = work.replacingOccurrences(of: ph, with: ch)
+            work = work.replacingOccurrences(of: ph, with: ch, options: .literal)
         }
         return work
     }

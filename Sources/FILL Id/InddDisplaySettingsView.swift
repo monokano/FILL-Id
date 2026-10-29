@@ -54,6 +54,15 @@ struct InddDisplaySettingsView: View {
                 .padding(.leading, 6)   // グループ内の左マージンを少し広げる
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .disabled(!showHide)
+
+                // プリセットを InDesign のドキュメントへ今すぐ反映（トグルせずチェックどおりに合わせる）
+                HStack {
+                    Spacer()
+                    Button("Apply to Document") {
+                        NotificationCenter.default.post(name: .applyGridsToDocumentRequested, object: nil)
+                    }
+                }
+                .disabled(!showHide)
             }
         }
         .formStyle(.grouped)

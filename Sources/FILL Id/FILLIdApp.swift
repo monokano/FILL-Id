@@ -29,6 +29,17 @@ enum DisplayModeStore {
         }
         return mode
     }
+
+    /// ノッチを考慮した実効モード。ノッチ付きディスプレイでは「メニューバーのみ」を
+    /// 「メニューバーとDock」に読み替える（アイコンがノッチの陰に隠れて操作不能になるのを防ぐ）。
+    /// 保存値そのものは書き換えない（非破壊。ノッチが外れれば元の設定に戻る）。
+    static func resolved() -> DisplayMode {
+        let mode = load()
+        if mode == .menuBar && NotchDetector.hasNotchedDisplay {
+            return defaultValue
+        }
+        return mode
+    }
 }
 
 extension Notification.Name {
@@ -38,6 +49,8 @@ extension Notification.Name {
     static let openInddDisplaySettingsRequested = Notification.Name("FILLId.openInddDisplaySettingsRequested")
     /// 設定（機能の有効/無効・Fキー等）が変わったとき。ホットキー再登録に使う。
     static let preferencesChanged = Notification.Name("FILLId.preferencesChanged")
+    /// ドキュメント表示設定のプリセットを、最後に最前面だった InDesign のドキュメントへ反映する要求。
+    static let applyGridsToDocumentRequested = Notification.Name("FILLId.applyGridsToDocumentRequested")
 }
 
 @main

@@ -9,6 +9,18 @@ struct InDesignTarget {
     let name: String   // 診断ログ用（例: "Adobe InDesign 2026"）
 }
 
+/// `do script` の返り値（reply の ---- パラメータ）のうち、呼び出し側が使う値だけを抜き出したもの。
+/// `NSAppleEventDescriptor` は Sendable でないため、送信キュー上でこの値に詰め替えてからメインスレッドへ渡す。
+nonisolated struct ScriptReply: Sendable {
+    let booleanValue: Bool
+    let stringValue: String?
+
+    init(_ descriptor: NSAppleEventDescriptor) {
+        booleanValue = descriptor.booleanValue
+        stringValue = descriptor.stringValue
+    }
+}
+
 /// InDesign 連携。`do script`（JavaScript）を **pid 指定の Apple Event** で送る（HANDOFF.md §8.1）。
 ///
 /// 送信は専用のシリアルキューで行い、**メインスレッドをブロックしない**（フリーズ対策）。
@@ -42,6 +54,22 @@ final class InDesignController {
         // localizedName は全バージョン "InDesign" になるため、診断用の名前は .app 名から採る（例: "Adobe InDesign 2026"）。
         let name = app.bundleURL?.deletingPathExtension().lastPathComponent ?? app.localizedName ?? "InDesign"
         return InDesignTarget(pid: app.processIdentifier, name: name)
+    }
+
+    /// 最後に最前面だった InDesign。FILL Id のウィンドウ操作中（InDesign が裏にいる間）の送信先に使う。
+    private var lastTarget: InDesignTarget?
+
+    /// 最前面が InDesign なら、それを最後の InDesign として覚える（最前面アプリの変化ごとに呼ぶ）。
+    func rememberFrontmostTarget() {
+        if let t = captureFrontmostTarget() { lastTarget = t }
+    }
+
+    /// 最後に最前面だった InDesign を返す。すでに終了していれば nil。
+    func lastActiveTarget() -> InDesignTarget? {
+        guard let t = lastTarget,
+              let app = NSRunningApplication(processIdentifier: t.pid),
+              !app.isTerminated, app.bundleIdentifier == Self.bundleID else { return nil }
+        return t
     }
 
     /// 対象 InDesign を最前面へ（アラート操作後などに使う）。
@@ -114,21 +142,29 @@ final class InDesignController {
     /// グリッド/ガイドの表示トグル（旧 SetGrids）。
     func toggleGrids(preset: [Bool], target: InDesignTarget) {
         let arr = "arr = new Array(" + preset.map { $0 ? "true" : "false" }.joined(separator: ",") + ");"
-        let js = "if(app.documents.length>0){\n" + arr + "\n" + Self.gridJSBody + "\n}"
+        let js = "if(app.documents.length>0){\n" + arr + "\n" + Self.gridJSHeader + "\n" + Self.gridJSToggle + "\n}"
+        runJavaScript(js, target: target)
+    }
+
+    /// グリッド・ガイドの表示をプリセットどおりに合わせる（トグルしない）。
+    /// ドキュメント表示設定の「ドキュメントに反映」ボタンから呼ぶ。
+    func applyGrids(preset: [Bool], target: InDesignTarget) {
+        let arr = "arr = new Array(" + preset.map { $0 ? "true" : "false" }.joined(separator: ",") + ");"
+        let js = "if(app.documents.length>0){\n" + arr + "\n" + Self.gridJSHeader + "\n" + Self.gridJSApply + "\n}"
         runJavaScript(js, target: target)
     }
 
     // MARK: - pid 指定の do script 送信（バックグラウンド・シリアルキュー）
 
     /// `do script` をシリアルキューから送信する。completion はメインスレッドで呼ばれる
-    /// （引数は reply の ---- パラメータ。送信失敗・タイムアウト時は nil）。
+    /// （引数は reply の ---- パラメータを `ScriptReply` に詰め替えたもの。送信失敗・タイムアウト時は nil）。
     /// タイムアウトの既定は 5 秒。ビジーな InDesign を長く待たず、多重発火ガード（isBusy）を早めに解く。
     private func runJavaScript(_ js: String, target: InDesignTarget, undo: Bool = false,
                                timeout: TimeInterval = 5,
-                               completion: (@MainActor (NSAppleEventDescriptor?) -> Void)? = nil) {
+                               completion: (@MainActor (ScriptReply?) -> Void)? = nil) {
         inFlightCount += 1
         sendQueue.async {
-            let result = Self.sendDoScript(js, to: target, undo: undo, timeout: timeout)
+            let result = Self.sendDoScript(js, to: target, undo: undo, timeout: timeout).map(ScriptReply.init)
             Task { @MainActor in
                 self.inFlightCount -= 1
                 completion?(result)
@@ -185,6 +221,9 @@ final class InDesignController {
             case "\r": out += "\\r"
             case "\n": out += "\\n"
             case "\t": out += "\\t"
+            // U+2028/U+2029 は JavaScript では文字列リテラル内でも行終端子（ES2019 より前＝ExtendScript）
+            case "\u{2028}": out += "\\u2028"
+            case "\u{2029}": out += "\\u2029"
             default:
                 if u.value < 0x20 {
                     out += String(format: "\\u%04X", u.value)
@@ -197,9 +236,9 @@ final class InDesignController {
         return out
     }
 
-    /// グリッド表示トグルの JavaScript 本体（旧 `SetGrids.myJavaScript`）。
+    /// グリッド表示 JavaScript の共通前置き（旧 `SetGrids.myJavaScript` の冒頭）。
     /// `arr[0..7]`: 0=レイアウトグリッド 1=フレームグリッド 2=文字数 3=フレーム枠 4=ガイド 5=ドキュメントグリッド 6=ベースライン 7=制御文字
-    private static let gridJSBody = #"""
+    private static let gridJSHeader = #"""
     b=false;
     myDoc=app.activeDocument;
 
@@ -209,7 +248,22 @@ final class InDesignController {
     if (appVer>=18 &&appVer<=19 ) {
     	app.toolBoxTools.currentTool = UITools.SELECTION_TOOL;
     }
+    """#
 
+    /// プリセットどおりに表示する部分（トグルの「何も表示されていない」側と共用）。
+    private static let gridJSApply = #"""
+    if (arr[0] != myDoc.cjkGridPreferences.showAllLayoutGrids){app.menuActions.itemByID(49922).invoke();}
+    if (arr[1] != myDoc.cjkGridPreferences.showAllFrameGrids){app.menuActions.itemByID(50179).invoke();}
+    if (arr[2] != myDoc.cjkGridPreferences.showCharacterCount){app.menuActions.itemByID(50178).invoke();}
+    if (arr[3] != myDoc.viewPreferences.showFrameEdges){app.menuActions.itemByID(24331).invoke();}
+    if (arr[4] != myDoc.guidePreferences.guidesShown){app.menuActions.itemByID(24325).invoke();}
+    if (arr[5] != myDoc.gridPreferences.documentGridShown){app.menuActions.itemByID(24329).invoke();}
+    if (arr[6] != myDoc.gridPreferences.baselineGridShown){app.menuActions.itemByID(24327).invoke();}
+    if (arr[7] != myDoc.textPreferences.showInvisibles){app.menuActions.itemByID(119553).invoke();}
+    """#
+
+    /// グリッド表示トグルの本体：いずれかが表示されていれば全部隠し、何も表示されていなければプリセットどおりに表示する。
+    private static let gridJSToggle = #"""
     //いずれかが表示されているか
     b=myDoc.cjkGridPreferences.showAllLayoutGrids;
     if (b==false){b=myDoc.cjkGridPreferences.showAllFrameGrids;}
@@ -230,14 +284,5 @@ final class InDesignController {
     if (myDoc.gridPreferences.baselineGridShown){app.menuActions.itemByID(24327).invoke();}
     if (myDoc.textPreferences.showInvisibles){app.menuActions.itemByID(119553).invoke();}
     }else{
-    if (arr[0] != myDoc.cjkGridPreferences.showAllLayoutGrids){app.menuActions.itemByID(49922).invoke();}
-    if (arr[1] != myDoc.cjkGridPreferences.showAllFrameGrids){app.menuActions.itemByID(50179).invoke();}
-    if (arr[2] != myDoc.cjkGridPreferences.showCharacterCount){app.menuActions.itemByID(50178).invoke();}
-    if (arr[3] != myDoc.viewPreferences.showFrameEdges){app.menuActions.itemByID(24331).invoke();}
-    if (arr[4] != myDoc.guidePreferences.guidesShown){app.menuActions.itemByID(24325).invoke();}
-    if (arr[5] != myDoc.gridPreferences.documentGridShown){app.menuActions.itemByID(24329).invoke();}
-    if (arr[6] != myDoc.gridPreferences.baselineGridShown){app.menuActions.itemByID(24327).invoke();}
-    if (arr[7] != myDoc.textPreferences.showInvisibles){app.menuActions.itemByID(119553).invoke();}
-    }
-    """#
+    """# + "\n" + gridJSApply + "\n}"
 }

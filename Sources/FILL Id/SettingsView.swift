@@ -22,10 +22,17 @@ struct SettingsView: View {
 struct GeneralSettingsView: View {
     @AppStorage(DisplayModeStore.key) private var rawMode: String = DisplayModeStore.defaultValue.rawValue
     @State private var launchAtLogin = (SMAppService.mainApp.status == .enabled)
+    /// ノッチ付きディスプレイがあるか。ディスプレイ構成の変化に追従して更新する。
+    @State private var hasNotch = NotchDetector.hasNotchedDisplay
 
     private var displayMode: Binding<DisplayMode> {
         Binding(
-            get: { DisplayMode(rawValue: rawMode) ?? DisplayModeStore.defaultValue },
+            get: {
+                let stored = DisplayMode(rawValue: rawMode) ?? DisplayModeStore.defaultValue
+                // ノッチ環境では「メニューバーのみ」を選べない → 実効モード（両方表示）を選択表示する。
+                if stored == .menuBar && hasNotch { return DisplayModeStore.defaultValue }
+                return stored
+            },
             set: { newValue in
                 rawMode = newValue.rawValue
                 NotificationCenter.default.post(name: .displayModeChanged, object: nil)
@@ -52,11 +59,21 @@ struct GeneralSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     ForEach(DisplayMode.allCases) { mode in
+                        // ノッチ環境では「メニューバーのみ」を無効化（アイコンがノッチの陰に隠れるため）。
                         RadioRow(title: mode.label,
-                                 isSelected: displayMode.wrappedValue == mode) {
+                                 isSelected: displayMode.wrappedValue == mode,
+                                 isDisabled: mode == .menuBar && hasNotch) {
                             displayMode.wrappedValue = mode
                         }
                     }
+                }
+
+                if hasNotch {
+                    Text("“Menu Bar Only” is unavailable on this Mac because the built-in display has a notch, where the menu bar icon could become hidden.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
                 }
 
                 Text("Hold ⌘ while launching to reset display mode to the initial state (Menu Bar and Dock).")
@@ -71,6 +88,10 @@ struct GeneralSettingsView: View {
         .padding(.bottom, 16)       // 区切り線までの間隔
         .frame(width: 320, alignment: .leading)
         .onChange(of: launchAtLogin) { newValue in setLaunchAtLogin(newValue) }
+        // ディスプレイ構成が変わったらノッチ判定を更新（メニューバーのみの有効/無効に反映）。
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            hasNotch = NotchDetector.hasNotchedDisplay
+        }
     }
 
     private func setLaunchAtLogin(_ enabled: Bool) {
@@ -87,10 +108,11 @@ struct GeneralSettingsView: View {
     }
 }
 
-/// ラジオ1行。ボタン（円）をラベルの左に置く。
+/// ラジオ1行。ボタン（円）をラベルの左に置く。無効時はグレーアウトして選択不可にする。
 private struct RadioRow: View {
     let title: LocalizedStringKey
     let isSelected: Bool
+    var isDisabled: Bool = false
     let action: () -> Void
 
     var body: some View {
@@ -104,6 +126,8 @@ private struct RadioRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .opacity(isDisabled ? 0.4 : 1)   // .plain スタイルは自動で薄くならないため明示的にグレーアウト
     }
 }
 

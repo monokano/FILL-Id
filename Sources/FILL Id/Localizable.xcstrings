@@ -23,6 +23,17 @@
         }
       }
     },
+    "Apply to Document" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ドキュメントに反映"
+          }
+        }
+      }
+    },
     "Baseline grid" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -410,6 +421,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "メニューバーのみ"
+          }
+        }
+      }
+    },
+    "“Menu Bar Only” is unavailable on this Mac because the built-in display has a notch, where the menu bar icon could become hidden." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacは内蔵ディスプレイにノッチがあり、メニューバーアイコンがノッチの陰に隠れることがあるため、「メニューバーのみ」は使用できません。"
           }
         }
       }

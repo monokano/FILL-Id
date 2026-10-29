@@ -53,6 +53,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                name: .openInddDisplaySettingsRequested, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(preferencesChanged),
                                                name: .preferencesChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(applyGridsToDocument),
+                                               name: .applyGridsToDocumentRequested, object: nil)
+        // ディスプレイ構成の変化（外部ディスプレイの抜き差し・蓋の開閉）でノッチの有無が
+        // 変わり得る。実効表示モードを再適用する（ノッチ出現時に「メニューバーのみ」→「両方」）。
+        NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged),
+                                               name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
         frontmostAppChanged()
 
@@ -93,6 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - 最前面監視 → ホットキー
 
     private func frontmostAppChanged() {
+        indesign.rememberFrontmostTarget()   // 「ドキュメントに反映」の送信先として覚える
         if indesign.isFrontmost {
             hotKeys.activate()
         } else {
@@ -124,6 +131,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// ドキュメント表示設定の「ドキュメントに反映」。最後に最前面だった InDesign へ送る（前面化はしない）。
+    @objc private func applyGridsToDocument() {
+        guard !indesign.isBusy else {
+            NSLog("[FILL Id] Apply ignored: previous InDesign command still awaiting reply")
+            return
+        }
+        guard let target = indesign.lastActiveTarget() else { return }
+        indesign.applyGrids(preset: Preferences.gridPreset, target: target)
+    }
+
     @objc private func preferencesChanged() {
         if indesign.isFrontmost { hotKeys.activate() }
         updateAppearance()
@@ -143,10 +160,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// ディスプレイ構成が変わったとき（ノッチの出現/消失を含む）に実効表示モードを再適用する。
+    @objc private func screenParametersChanged() {
+        applyDisplayMode()
+    }
+
     // MARK: - 表示モード（メニューバー / Dock / 両方）
 
     private func applyDisplayMode() {
-        let mode = DisplayModeStore.load()
+        let mode = DisplayModeStore.resolved()
         switch mode {
         case .menuBar:     NSApp.setActivationPolicy(.accessory)
         case .dock, .both: NSApp.setActivationPolicy(.regular)
