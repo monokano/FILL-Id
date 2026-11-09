@@ -16,8 +16,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var permissionRefreshInFlight = false
     private var settingsWindow: NSWindow?
     private var inddSettingsWindow: NSWindow?
-    private var changeLogWindowController: ChangeLogWindowController?
-    private var helpWindowController: HelpWindowController?
     private var appSwitchObserver: Any?
 
     private let indesign = InDesignController()
@@ -250,23 +248,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             action: #selector(showSettings), keyEquivalent: "")
         settings.target = self
 
-        let changeLog = NSMenuItem(
-            title: NSLocalizedString("Change Log", comment: "Change log menu item"),
-            action: #selector(openChangeLog), keyEquivalent: "")
-        changeLog.target = self
-
         let help = NSMenuItem(
             title: NSLocalizedString("Help", comment: "Help menu item (common menu)"),
             action: #selector(openHelp), keyEquivalent: "")
         help.target = self
 
         // 設定群（設定／ドキュメント表示設定）は Dock とメニューバーで並びを反転させる。
-        // 更新履歴とヘルプの組（更新履歴の下にヘルプ）は反転せず、両メニューで同じ並び。
+        // 「ヘルプ」は区切り線を挟んで、Dock では設定群の上、メニューバーでは下に置く。
         let settingsPair = settingsOnTop ? [settings, inddSettings] : [inddSettings, settings]
-        let logGroup = [changeLog, help]
         let items: [NSMenuItem] = settingsOnTop
-            ? logGroup + [.separator()] + settingsPair
-            : settingsPair + [.separator()] + logGroup
+            ? [help, .separator()] + settingsPair
+            : settingsPair + [.separator(), help]
         for item in items {
             menu.addItem(item)
         }
@@ -389,7 +381,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// ウィンドウ位置を記憶する。`name` でフレームを自動保存し、保存済みがあれば復元、なければ中央に置く。
-    /// 設定・ドキュメント表示設定ウィンドウで使用（更新履歴・ヘルプは位置記憶しない）。
+    /// 設定・ドキュメント表示設定ウィンドウで使用（ヘルプは位置記憶しない）。
     /// 高さは SwiftUI コンテンツ（fixedSize）で決まるため、**表示前に**レイアウトを確定（`fittingSize` に
     /// 合わせる）してから左上で再配置する。これで表示時にリサイズ＝上端の移動が起きず、ちらつかない。
     private func restoreFrameOrCenter(_ window: NSWindow, name: String) {
@@ -437,20 +429,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let window = inddSettingsWindow { bringToFront(window) }
     }
 
-    /// 更新履歴ウィンドウを開く（ヘルプメニュー／共通メニューから呼ばれる）。Glow Id の方式を流用。
-    @objc func openChangeLog() {
-        if changeLogWindowController == nil {
-            changeLogWindowController = ChangeLogWindowController()
-        }
-        changeLogWindowController?.show()
-    }
-
-    /// ヘルプウィンドウを開く（ヘルプメニュー／共通メニューから呼ばれる）。Glow Id の方式を流用。
+    /// ヘルプウインドウを開く（ヘルプメニュー／共通メニュー〔Dock・メニューバー〕から呼ばれる）。
+    /// タイトルはどこから開いてもヘルプメニューの項目名と同じ「FILL Id ヘルプ」。
     @objc func openHelp() {
-        if helpWindowController == nil {
-            helpWindowController = HelpWindowController()
-        }
-        helpWindowController?.show()
+        HelpWindowController.shared.show(title: String(localized: "FILL Id Help"))
     }
 
     @objc private func showAbout() {

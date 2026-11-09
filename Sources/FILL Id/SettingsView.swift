@@ -1,27 +1,60 @@
 import SwiftUI
 import ServiceManagement
 
-/// 設定ウィンドウ。1枚のウィンドウに「一般」と「機能」を縦に並べ、区切り線で分ける。
-/// グルーピング（GroupBox / Form セクション枠）は使わず、フラットに並べる。
+/// 設定ウインドウ。SwiftUI の標準フォーム（`Form`＋`.formStyle(.grouped)`）＝白い地に薄いグレーの角丸カード。
+/// macOS 26 でウインドウの地がほぼ白になり、旧来のフラットレイアウト（区切り線で分ける）ではまとまりが
+/// 分からなくなったため、OS 純正の設定画面と同じ部品へ移した
+/// （共有資料「設定ウインドウ_macOS26のカード型レイアウト.md」・ステップ4）。
+/// カードは上から「ログイン時に起動」／「表示モード」／「機能」（クリーンペーストの組と、全体表示・ズームの2枚）。オン／オフはスイッチ。
+/// 項目は1画面に収まるのでスクロールを止め、内容の高さをそのままウインドウの高さにする。
 struct SettingsView: View {
+    static let width: CGFloat = 400
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            GeneralSettingsView()
-            Divider()
-                .padding(.horizontal, 20)   // 一般／機能の区切り線。左右インセット 20
+        Form {
+            LaunchAtLoginSettingsView()
+            DisplayModeSettingsView()
             FeaturesSettingsView()
         }
-        .frame(width: 320)
+        .formStyle(.grouped)
+        .scrollDisabled(true)
+        .frame(width: Self.width)
         .fixedSize(horizontal: false, vertical: true)
     }
 }
 
-// MARK: - 一般
+// MARK: - ログイン時に起動
 
-/// 動作トグルと表示モード。グループ枠なしのフラットレイアウト。
-struct GeneralSettingsView: View {
-    @AppStorage(DisplayModeStore.key) private var rawMode: String = DisplayModeStore.defaultValue.rawValue
+struct LaunchAtLoginSettingsView: View {
     @State private var launchAtLogin = (SMAppService.mainApp.status == .enabled)
+
+    var body: some View {
+        Section {
+            Toggle("Launch at Login", isOn: $launchAtLogin)
+                .onChange(of: launchAtLogin) { newValue in setLaunchAtLogin(newValue) }
+        }
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        // 失敗して元の値へ戻したときの再入を避ける
+        guard enabled != (SMAppService.mainApp.status == .enabled) else { return }
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            NSLog("[FILL Id] Failed to change login item: %@", error.localizedDescription)
+            launchAtLogin = (SMAppService.mainApp.status == .enabled)
+        }
+    }
+}
+
+// MARK: - 表示モード
+
+struct DisplayModeSettingsView: View {
+    @AppStorage(DisplayModeStore.key) private var rawMode: String = DisplayModeStore.defaultValue.rawValue
     /// ノッチ付きディスプレイがあるか。ディスプレイ構成の変化に追従して更新する。
     @State private var hasNotch = NotchDetector.hasNotchedDisplay
 
@@ -41,69 +74,31 @@ struct GeneralSettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // 動作
-            VStack(alignment: .leading, spacing: 10) {
-                Toggle("Launch at Login", isOn: $launchAtLogin)
-            }
-            .toggleStyle(.checkbox)
-
-            // 区切り線（外側の 30 マージンから -10 はみ出させ、もう一方の区切り線と同じ左右インセット 20 に揃える）
-            Divider()
-                .padding(.horizontal, -10)
-
-            // 表示モード（ラジオはボタンがラベルの左／行間は詰める）
+        // ラジオはボタンがラベルの左に縦並び（システム設定と同じ）。1つのカード行にまとめる。
+        // Picker(.radioGroup) は1項目だけ .disabled にしても文字が薄くならないので、自前の RadioRow を使う。
+        Section("Display Mode") {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Display Mode")
-                    .fontWeight(.semibold)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach(DisplayMode.allCases) { mode in
-                        // ノッチ環境では「メニューバーのみ」を無効化（アイコンがノッチの陰に隠れるため）。
-                        RadioRow(title: mode.label,
-                                 isSelected: displayMode.wrappedValue == mode,
-                                 isDisabled: mode == .menuBar && hasNotch) {
-                            displayMode.wrappedValue = mode
-                        }
+                ForEach(DisplayMode.allCases) { mode in
+                    // ノッチ環境では「メニューバーのみ」を無効化（アイコンがノッチの陰に隠れるため）。
+                    RadioRow(title: mode.label,
+                             isSelected: displayMode.wrappedValue == mode,
+                             isDisabled: mode == .menuBar && hasNotch) {
+                        displayMode.wrappedValue = mode
                     }
                 }
+            }
 
-                if hasNotch {
-                    Text("“Menu Bar Only” is unavailable on this Mac because the built-in display has a notch, where the menu bar icon could become hidden.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 2)
-                }
-
-                Text("Hold ⌘ while launching to reset display mode to the initial state (Menu Bar and Dock).")
+            if hasNotch {
+                Text("“Menu Bar Only” is unavailable on this Mac because the built-in display has a notch, where the menu bar icon could become hidden.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 2)
             }
+            // ⌘ キーを押しながら起動して表示モードを戻す注記は画面から外した（ヘルプの「ヒント」に記載。ステップ4）
         }
-        .padding(.horizontal, 30)   // 左右はゆったり
-        .padding(.top, 22)          // ウィンドウ上マージン
-        .padding(.bottom, 16)       // 区切り線までの間隔
-        .frame(width: 320, alignment: .leading)
-        .onChange(of: launchAtLogin) { newValue in setLaunchAtLogin(newValue) }
         // ディスプレイ構成が変わったらノッチ判定を更新（メニューバーのみの有効/無効に反映）。
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             hasNotch = NotchDetector.hasNotchedDisplay
-        }
-    }
-
-    private func setLaunchAtLogin(_ enabled: Bool) {
-        do {
-            if enabled {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
-            }
-        } catch {
-            NSLog("[FILL Id] Failed to change login item: %@", error.localizedDescription)
-            launchAtLogin = (SMAppService.mainApp.status == .enabled)
         }
     }
 }
@@ -133,7 +128,9 @@ private struct RadioRow: View {
 
 // MARK: - 機能
 
-/// ホットキー機能の個別 ON/OFF。グループ枠なしでチェックボックスを直接並べる。
+/// ホットキー機能の個別 ON/OFF。
+/// 見出し「機能」の下にカードを2枚並べる。1枚目はクリーンペーストとその従属設定（字下げ）、2枚目は全体表示とズーム。
+/// 従属設定を他の機能と同列の行にすると、クリーンペーストの設定だと伝わらないため（ユーザー指摘 2026-11-10）。
 struct FeaturesSettingsView: View {
     @AppStorage(PrefKey.textPaste) private var textPaste = true
     @AppStorage(PrefKey.viewFit)   private var viewFit = true
@@ -141,29 +138,20 @@ struct FeaturesSettingsView: View {
     @AppStorage(PrefKey.pasteFlash) private var pasteFlash = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // クリーンペーストと、その従属設定（ペースト時に画面を一瞬暗くする）
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle("Clean paste (⌥V / ⇧⌥V)", isOn: $textPaste)
-
-                // クリーンペーストより右にインデント＋小さめ＋OFF時グレーアウト
-                Toggle("Briefly dim the screen on paste", isOn: $pasteFlash)
-                    .controlSize(.small)
-                    .padding(.leading, 20)
-                    .disabled(!textPaste)
-            }
-
-            Toggle("Fit page / spread (⌘0 / ⌥⌘0)", isOn: $viewFit)
-            Toggle("Zoom in / out (⌘± / ⇧⌘±)", isOn: $zoom)
+        Section("Features") {
+            Toggle("Clean paste (⌥V / ⌥⇧V)", isOn: $textPaste)
+                .onChange(of: textPaste) { _ in postPrefsChanged() }
+            // クリーンペーストの従属設定。字下げして示す。クリーンペーストが OFF のときは無効
+            Toggle("Briefly dim the screen on paste", isOn: $pasteFlash)
+                .padding(.leading, 20)
+                .disabled(!textPaste)
         }
-        .toggleStyle(.checkbox)
-        .padding(.horizontal, 30)   // 左右はゆったり
-        .padding(.top, 16)          // 区切り線からの間隔
-        .padding(.bottom, 22)       // ウィンドウ下マージン
-        .frame(width: 320, alignment: .leading)
-        .onChange(of: textPaste) { _ in postPrefsChanged() }
-        .onChange(of: viewFit)   { _ in postPrefsChanged() }
-        .onChange(of: zoom)      { _ in postPrefsChanged() }
+        Section {
+            Toggle("Fit page / spread (⌘0 / ⌥⌘0)", isOn: $viewFit)
+                .onChange(of: viewFit) { _ in postPrefsChanged() }
+            Toggle("Zoom in / out (⌘± / ⇧⌘±)", isOn: $zoom)
+                .onChange(of: zoom) { _ in postPrefsChanged() }
+        }
     }
 
     private func postPrefsChanged() {

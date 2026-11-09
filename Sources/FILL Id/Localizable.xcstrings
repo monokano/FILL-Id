@@ -56,17 +56,6 @@
         }
       }
     },
-    "Change Log" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更新履歴"
-          }
-        }
-      }
-    },
     "Character count" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -100,13 +89,13 @@
         }
       }
     },
-    "Clean paste (⌥V / ⇧⌥V)" : {
+    "Clean paste (⌥V / ⌥⇧V)" : {
       "extractionState" : "manual",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "クリーンペースト（⌥V / ⇧⌥V）"
+            "value" : "クリーンペースト（⌥V / ⌥⇧V）"
           }
         }
       }
@@ -210,9 +199,7 @@
         }
       }
     },
-    "F%lld" : {
-
-    },
+    "F%lld" : {},
     "Features" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -290,9 +277,6 @@
         }
       }
     },
-    "GitHub Releases" : {
-
-    },
     "Grid / Guide Preset" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -333,17 +317,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "起動時に ⌘ で表示モードをリセット"
-          }
-        }
-      }
-    },
-    "Hold ⌘ while launching to reset display mode to the initial state (Menu Bar and Dock)." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⌘キーを押しながら起動すると、表示モードを初期状態（メニューバーとDock）に戻します。"
           }
         }
       }
@@ -575,6 +548,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ズーム（⌘± / ⇧⌘±）"
+          }
+        }
+      }
+    },
+    "Back" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "戻る"
+          }
+        }
+      }
+    },
+    "Forward" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "進む"
           }
         }
       }
